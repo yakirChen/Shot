@@ -29,7 +29,7 @@ enum AnnotationTool: String, CaseIterable {
     case .line: return "line.diagonal"
     case .text: return "textformat"
     case .highlight: return "highlighter"
-    case .blur: return "drop.halffull"
+    case .blur: return "squareshape.split.2x2"  // 更直观的马赛克图标
     case .number: return "1.circle.fill"
     case .pen: return "pencil.tip"
     case .measure: return "ruler"

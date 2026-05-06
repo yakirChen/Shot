@@ -16,6 +16,7 @@ class EditorWindowController: NSWindowController {
   private var toolbarView: EditorToolbarView!
   private var scrollView: NSScrollView!
   private var eventMonitor: Any?
+  private var hasSampledImageColor = false
 
   static func show(with image: NSImage) {
     current?.close()
@@ -63,7 +64,12 @@ class EditorWindowController: NSWindowController {
 
     self.init(window: window)
 
-    setupViews(image: image, windowSize: windowSize, toolbarHeight: toolbarHeight)
+    window.delegate = self
+    setupViews(
+      image: image,
+      windowSize: windowSize,
+      toolbarHeight: toolbarHeight,
+      initialZoomLevel: scale)
     setupKeyboardMonitor()
 
     NotificationCenter.default.addObserver(
@@ -81,7 +87,12 @@ class EditorWindowController: NSWindowController {
     NotificationCenter.default.removeObserver(self)
   }
 
-  private func setupViews(image: NSImage, windowSize: CGSize, toolbarHeight: CGFloat) {
+  private func setupViews(
+    image: NSImage,
+    windowSize: CGSize,
+    toolbarHeight: CGFloat,
+    initialZoomLevel: CGFloat
+  ) {
     guard let contentView = window?.contentView else { return }
     contentView.wantsLayer = true
 
@@ -106,6 +117,7 @@ class EditorWindowController: NSWindowController {
 
     // ✅ 编辑器用自定义可拖拽画布，不用 NSScrollView
     let canvasView = CanvasView(frame: contentView.bounds)
+    canvasView.topContentInset = toolbarHeight
     canvasView.autoresizingMask = [.width, .height]
     contentView.addSubview(canvasView)
 
@@ -113,23 +125,18 @@ class EditorWindowController: NSWindowController {
     editorView.image = image
     editorView.currentColor = PreferencesManager.shared.defaultAnnotationColor
     editorView.currentLineWidth = PreferencesManager.shared.defaultLineWidth
-    editorView.translatesAutoresizingMaskIntoConstraints = false  // ✅ 使用 Auto Layout
+    editorView.translatesAutoresizingMaskIntoConstraints = true
+    editorView.frame = CGRect(origin: .zero, size: image.size)
+    editorView.bounds = CGRect(origin: .zero, size: image.size)
 
     canvasView.editorView = editorView
     canvasView.addSubview(editorView)
-
-    // ✅ Auto Layout 约束：始终居中，避免抖动
-    NSLayoutConstraint.activate([
-      editorView.centerXAnchor.constraint(equalTo: canvasView.centerXAnchor),
-      editorView.centerYAnchor.constraint(equalTo: canvasView.centerYAnchor),
-      editorView.widthAnchor.constraint(equalToConstant: image.size.width),
-      editorView.heightAnchor.constraint(equalToConstant: image.size.height),
-    ])
+    canvasView.setZoomLevel(initialZoomLevel)
 
     self.scrollView = nil  // 不再使用 scrollView
   }
 
-  @objc private func windowDidResize(_ notification: Notification) {
+  @objc func windowDidResize(_ notification: Notification) {
     // ✅ Auto Layout 自动处理居中
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -147,6 +154,9 @@ class EditorWindowController: NSWindowController {
       let shift = event.modifierFlags.contains(.shift)
 
       switch event.keyCode {
+      case 48 where !cmd && !shift && self.hasSampledImageColor:
+        self.toolbarView.copyCurrentColorHex()
+        return nil
       case 6 where cmd && shift:
         self.editorView.redo()
         return nil
@@ -185,7 +195,7 @@ class EditorWindowController: NSWindowController {
     case "tiff": savePanel.allowedContentTypes = [.tiff]
     default: savePanel.allowedContentTypes = [.png]
     }
-    savePanel.nameFieldStringValue = "Screenshot_\(dateString()).\(ext)"
+    savePanel.nameFieldStringValue = "Shot_\(dateString()).\(ext)"
 
     savePanel.beginSheetModal(for: self.window!) { response in
       if response == .OK, let url = savePanel.url {
@@ -200,7 +210,7 @@ class EditorWindowController: NSWindowController {
 
     let format = PreferencesManager.shared.saveFormat
     let ext = format == "jpeg" ? "jpg" : format
-    let fileName = "Screenshot_\(dateString()).\(ext)"
+    let fileName = "Shot_\(dateString()).\(ext)"
 
     let saveDir = URL(fileURLWithPath: PreferencesManager.shared.defaultSaveLocation)
     let fileURL = saveDir.appendingPathComponent(fileName)
@@ -275,6 +285,11 @@ class EditorWindowController: NSWindowController {
     toolbarView?.zoomLevel = level
   }
 
+  func sampledImageColorDidChange(_ color: NSColor) {
+    hasSampledImageColor = true
+    toolbarView?.applySampledImageColor(color)
+  }
+
   private func saveImageToFile(image: NSImage, url: URL, format: String) {
     guard let tiffData = image.tiffRepresentation,
       let bitmapRep = NSBitmapImageRep(data: tiffData)
@@ -337,6 +352,14 @@ class EditorWindowController: NSWindowController {
   }
 }
 
+// MARK: - NSWindowDelegate
+
+extension EditorWindowController: NSWindowDelegate {
+  func windowWillClose(_ notification: Notification) {
+    EditorWindowController.current = nil
+  }
+}
+
 // MARK: - EditorToolbarDelegate
 
 extension EditorWindowController: EditorToolbarDelegate {
@@ -345,8 +368,12 @@ extension EditorWindowController: EditorToolbarDelegate {
   func lineWidthDidChange(_ width: CGFloat) { editorView.currentLineWidth = width }
   func fillModeDidChange(_ isFilled: Bool) { editorView.currentFillMode = isFilled }
   func zoomDidChange(_ level: CGFloat) {
-    // 通过 canvasView 设置缩放
-    (window?.contentView as? CanvasView)?.setZoomLevel(level)
+    guard let canvas = window?.contentView?.subviews.first(where: { $0 is CanvasView }) as? CanvasView else { return }
+    if level == 0 {
+      canvas.zoomToFit()
+    } else {
+      canvas.setZoomLevel(level)
+    }
   }
   func undoAction() { editorView.undo() }
   func redoAction() { editorView.redo() }

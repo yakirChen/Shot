@@ -17,6 +17,7 @@ class HistoryWindowController: NSWindowController {
   static func show() {
     if let existing = current {
       existing.window?.makeKeyAndOrderFront(nil)
+      NSApp.activate(ignoringOtherApps: true)
       return
     }
 
@@ -72,7 +73,7 @@ class HistoryWindowController: NSWindowController {
     ])
 
     // 截图数量标签
-    let countLabel = NSTextField(labelWithString: "\(HistoryManager.shared.items.count) 张截图")
+    let countLabel = NSTextField(labelWithString: "\(HistoryManager.shared.items.count) 项")
     countLabel.font = .systemFont(ofSize: 12, weight: .medium)
     countLabel.textColor = .secondaryLabelColor
     countLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -105,13 +106,13 @@ class HistoryWindowController: NSWindowController {
   private func updateCountLabel() {
     if let toolbar = window?.contentView?.subviews.first,
        let label = toolbar.viewWithTag(100) as? NSTextField {
-      label.stringValue = "\(HistoryManager.shared.items.count) 张截图"
+      label.stringValue = "\(HistoryManager.shared.items.count) 项"
     }
   }
 
   private func updateWindowTitle() {
     let count = HistoryManager.shared.items.count
-    window?.title = "截图历史 (\(count) 张)"
+    window?.title = "历史记录 (\(count) 项)"
   }
 
   override func close() {

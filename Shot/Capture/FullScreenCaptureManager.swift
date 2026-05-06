@@ -16,28 +16,20 @@ class FullScreenCaptureManager {
       do {
         let image = try await ScreenCaptureService.shared.captureFullScreen()
 
-        // 复制到剪贴板
-        copyToClipboard(image: image)
+        if PreferencesManager.shared.saveToHistory {
+          HistoryManager.shared.save(image: image)
+        }
 
-        // 打开编辑器
-        EditorWindowController.show(with: image)
+        if PreferencesManager.shared.playSoundOnCapture {
+          NSSound(named: "Tink")?.play()
+        }
 
-        // ✅ 保存到历史
-        HistoryManager.shared.save(image: image)
-
-        // 音效
-        NSSound(named: "Tink")?.play()
+        SelectionCaptureManager.shared.performAction(for: image)
 
       } catch {
         showError(error.localizedDescription)
       }
     }
-  }
-
-  private func copyToClipboard(image: NSImage) {
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.writeObjects([image])
   }
 
   private func showError(_ message: String) {

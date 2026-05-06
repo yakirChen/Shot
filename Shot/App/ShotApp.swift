@@ -6,7 +6,6 @@
 //
 
 import AppKit
-// App/ShotApp.swift
 import SwiftUI
 
 @main

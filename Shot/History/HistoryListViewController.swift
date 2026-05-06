@@ -42,7 +42,7 @@ class HistoryListViewController: NSViewController {
 
   @objc func clearAll() {
     let alert = NSAlert()
-    alert.messageText = "确认清空所有截图历史？"
+    alert.messageText = "确认清空所有历史记录？"
     alert.informativeText = "此操作不可撤销"
     alert.alertStyle = .warning
     alert.addButton(withTitle: "清空")
@@ -141,7 +141,7 @@ class HistoryListViewController: NSViewController {
 
   private func updateWindowTitle() {
     let count = HistoryManager.shared.items.count
-    view.window?.title = "截图历史 (\(count) 张)"
+    view.window?.title = "历史记录 (\(count) 项)"
   }
 
   // MARK: - 交互处理
@@ -151,8 +151,15 @@ class HistoryListViewController: NSViewController {
     guard clickedRow >= 0 && clickedRow < HistoryManager.shared.items.count else { return }
 
     let entry = HistoryManager.shared.items[clickedRow]
-    if let image = HistoryManager.shared.getImage(for: entry) {
-      EditorWindowController.show(with: image)
+    
+    switch entry.type {
+    case .screenshot, .clipboardImage:
+      if let image = HistoryManager.shared.getImage(for: entry) {
+        EditorWindowController.show(with: image)
+      }
+    case .clipboardText:
+      // 文本类型：复制到剪贴板
+      ClipboardHistoryManager.shared.copyToClipboard(item: entry)
     }
   }
 
@@ -399,23 +406,33 @@ extension HistoryListViewController: NSTableViewDelegate {
     switch column.identifier.rawValue {
     case "Thumbnail":
       guard let imageView = cell as? NSImageView else { return }
-      // 异步加载缩略图
-      DispatchQueue.global(qos: .userInitiated).async {
-        let image = HistoryManager.shared.getImage(for: entry)
-        DispatchQueue.main.async {
-          imageView.image = image
+      
+      switch entry.type {
+      case .screenshot, .clipboardImage:
+        // 异步加载缩略图
+        DispatchQueue.global(qos: .userInitiated).async {
+          let image = HistoryManager.shared.getImage(for: entry)
+          DispatchQueue.main.async {
+            imageView.image = image
+          }
         }
+      case .clipboardText:
+        // 文本类型显示文本图标
+        imageView.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
+        imageView.contentTintColor = .secondaryLabelColor
       }
 
     case "Info":
       guard let textField = cell as? NSTextField else { return }
-      let dateFormatter = DateFormatter()
-      dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-      textField.stringValue = "\(dateFormatter.string(from: entry.date))"
+      textField.stringValue = entry.displayName
 
     case "Size":
       guard let textField = cell as? NSTextField else { return }
-      textField.stringValue = "\(entry.width) × \(entry.height)"
+      if let width = entry.width, let height = entry.height {
+        textField.stringValue = "\(width) × \(height)"
+      } else {
+        textField.stringValue = ""
+      }
 
     case "Action":
       // 更新删除按钮的 tag 为当前行号，用于识别点击的是哪一行
@@ -502,8 +519,14 @@ extension HistoryListViewController: NSTableViewDelegate {
     guard row >= 0 else { return }
 
     let entry = HistoryManager.shared.items[row]
-    if let image = HistoryManager.shared.getImage(for: entry) {
-      EditorWindowController.show(with: image)
+    
+    switch entry.type {
+    case .screenshot, .clipboardImage:
+      if let image = HistoryManager.shared.getImage(for: entry) {
+        EditorWindowController.show(with: image)
+      }
+    case .clipboardText:
+      ClipboardHistoryManager.shared.copyToClipboard(item: entry)
     }
   }
 
@@ -512,10 +535,7 @@ extension HistoryListViewController: NSTableViewDelegate {
     guard row >= 0 else { return }
 
     let entry = HistoryManager.shared.items[row]
-    if let image = HistoryManager.shared.getImage(for: entry) {
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.writeObjects([image])
-    }
+    ClipboardHistoryManager.shared.copyToClipboard(item: entry)
   }
 
   @objc private func showInFinder() {
@@ -523,7 +543,8 @@ extension HistoryListViewController: NSTableViewDelegate {
     guard row >= 0 else { return }
 
     let entry = HistoryManager.shared.items[row]
-    NSWorkspace.shared.selectFile(entry.filePath, inFileViewerRootedAtPath: "")
+    guard let filePath = entry.filePath else { return }
+    NSWorkspace.shared.selectFile(filePath, inFileViewerRootedAtPath: "")
   }
 
   @objc private func deleteSelectedItem() {

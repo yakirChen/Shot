@@ -109,6 +109,7 @@ class AnnotationPropertyOverlay: NSView {
         sliderContainer.addSubview(wedgeView)
         
         widthSlider = NSSlider(value: Double(lineWidth), minValue: 1, maxValue: 15, target: self, action: #selector(widthChanged(_:)))
+        widthSlider.isContinuous = true
         widthSlider.controlSize = .small
         widthSlider.translatesAutoresizingMaskIntoConstraints = false
         sliderContainer.addSubview(widthSlider)
@@ -122,16 +123,29 @@ class AnnotationPropertyOverlay: NSView {
         
         // 4. 样式选项 (0:圆角 1:流线/直角 2:遮罩 3:实心)
         if showStyleOptions {
-            let config = NSSegmentedControl(labels: ["", "", "", ""], trackingMode: .selectOne, target: self, action: #selector(styleChanged(_:)))
-            config.segmentStyle = .capsule
-            config.setImage(NSImage(systemSymbolName: "square", accessibilityDescription: nil), forSegment: 0) // 圆角
-            config.setImage(NSImage(systemSymbolName: "scribble", accessibilityDescription: nil), forSegment: 1) // 流线/直角
-            config.setImage(NSImage(systemSymbolName: "square.grid.3x3", accessibilityDescription: nil), forSegment: 2) // 遮罩
-            config.setImage(NSImage(systemSymbolName: "square.fill", accessibilityDescription: nil), forSegment: 3) // 实心
-            config.selectedSegment = styleIndex
-            config.controlSize = .small
-            styleSegmented = config
-            stackView.addArrangedSubview(config)
+            let icons = ["square", "scribble", "square.grid.3x3", "square.fill"]
+            for (i, icon) in icons.enumerated() {
+                let btn = NSButton(frame: .zero)
+                btn.bezelStyle = .recessed
+                btn.isBordered = false
+                btn.setButtonType(.toggle)
+                btn.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
+                btn.state = (i == styleIndex) ? .on : .off
+                btn.contentTintColor = (i == styleIndex) ? .controlAccentColor : .secondaryLabelColor
+                btn.wantsLayer = true
+                btn.layer?.cornerRadius = 4
+                btn.layer?.backgroundColor = (i == styleIndex)
+                    ? NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
+                    : NSColor.clear.cgColor
+                btn.tag = i
+                btn.target = self
+                btn.action = #selector(styleButtonClicked(_:))
+                btn.translatesAutoresizingMaskIntoConstraints = false
+                btn.widthAnchor.constraint(equalToConstant: 26).isActive = true
+                btn.heightAnchor.constraint(equalToConstant: 22).isActive = true
+                stackView.addArrangedSubview(btn)
+            }
         }
         
         // 5. 文字/序号 大小选项
@@ -179,7 +193,6 @@ class AnnotationPropertyOverlay: NSView {
     private func updateUI() {
         colorButton?.layer?.backgroundColor = color.cgColor
         widthSlider?.doubleValue = Double(lineWidth)
-        styleSegmented?.selectedSegment = styleIndex
     }
     
     @objc private func backClicked() {
@@ -197,7 +210,7 @@ class AnnotationPropertyOverlay: NSView {
         let popover = NSPopover()
         popover.contentViewController = controller
         popover.behavior = .transient
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
     }
     
     @objc private func widthChanged(_ sender: NSSlider) {
@@ -205,8 +218,17 @@ class AnnotationPropertyOverlay: NSView {
         delegate?.propertyDidChange(color: nil, lineWidth: lineWidth, isFilled: nil, style: nil, fontName: nil, fontSize: nil)
     }
     
-    @objc private func styleChanged(_ sender: NSSegmentedControl) {
-        styleIndex = sender.selectedSegment
+    @objc private func styleButtonClicked(_ sender: NSButton) {
+        styleIndex = sender.tag
+        // 更新所有样式按钮的高亮状态
+        for view in stackView.arrangedSubviews {
+            guard let btn = view as? NSButton, btn.action == #selector(styleButtonClicked(_:)) else { continue }
+            let active = btn.tag == styleIndex
+            btn.contentTintColor = active ? .controlAccentColor : .secondaryLabelColor
+            btn.layer?.backgroundColor = active
+                ? NSColor.controlAccentColor.withAlphaComponent(0.2).cgColor
+                : NSColor.clear.cgColor
+        }
         delegate?.propertyDidChange(color: nil, lineWidth: nil, isFilled: (styleIndex == 3), style: styleIndex, fontName: nil, fontSize: nil)
     }
 

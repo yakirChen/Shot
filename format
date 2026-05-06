@@ -9,3 +9,6 @@
 swift format --in-place --recursive --color-diagnostics ./
 
 # swiftlint --fix --format .
+
+
+# xcodebuild -project Shot.xcodeproj -scheme Shot -configuration Debug -derivedDataPath .build/DerivedData CODE_SIGNING_ALLOWED=NO build

@@ -43,7 +43,7 @@ class EditorToolbarView: NSView {
 
   // 控件引用
   private var toolButtons: [AnnotationTool: NSButton] = [:]
-  private var colorWell: NSColorWell?
+  private var colorWell: PickerColorWell?
   private var colorHexLabel: NSTextField?
   private var sizeLabel: NSTextField?
   private var zoomLabel: NSTextField?
@@ -66,6 +66,14 @@ class EditorToolbarView: NSView {
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     setupUI()
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    // Preserve the native traffic-light buttons even though the toolbar spans the titlebar.
+    if point.x < 78 {
+      return nil
+    }
+    return super.hitTest(point)
   }
 
   func updateLayout() {
@@ -268,10 +276,10 @@ class EditorToolbarView: NSView {
 
   private func buildRightInfo() {
     // 颜色
-    let cw = NSColorWell(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
+    let cw = PickerColorWell(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
     cw.color = currentColor
     cw.target = self
-    cw.action = #selector(colorChanged(_:))
+    cw.action = #selector(colorPickerClicked(_:))
     if #available(macOS 13.0, *) {
       cw.colorWellStyle = .minimal
     }
@@ -326,16 +334,23 @@ class EditorToolbarView: NSView {
 
     rightContainer.addArrangedSubview(createDivider())
 
-    // 缩放（垂直排列）
+    // 缩放按钮（垂直排列，保留 Zoom 提示）
     let zoomStack = NSStackView()
     zoomStack.orientation = .vertical
     zoomStack.spacing = 0
-    zoomStack.alignment = .leading
+    zoomStack.alignment = .centerX
 
-    let zl = NSTextField(labelWithString: "100%")
+    let zl = NSButton(frame: .zero)
+    zl.bezelStyle = .recessed
+    zl.isBordered = false
     zl.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
-    zl.textColor = .labelColor
-    zoomLabel = zl
+    zl.title = "\(Int(zoomLevel * 100))%"
+    zl.target = self
+    zl.action = #selector(zoomButtonClicked(_:))
+    zl.toolTip = "点击选择缩放比例"
+    zl.tag = 9001
+    zl.translatesAutoresizingMaskIntoConstraints = false
+    zl.widthAnchor.constraint(equalToConstant: 48).isActive = true
     zoomStack.addArrangedSubview(zl)
 
     let zoomHint = NSTextField(labelWithString: "Zoom")
@@ -413,6 +428,7 @@ class EditorToolbarView: NSView {
   private func updateInfoLabels() {
     sizeLabel?.stringValue = "\(Int(imageSize.width))×\(Int(imageSize.height))pt"
     zoomLabel?.stringValue = "\(Int(zoomLevel * 100))%"
+    (viewWithTag(9001) as? NSButton)?.title = "\(Int(zoomLevel * 100))%"
   }
 
   // MARK: - Actions
@@ -424,12 +440,19 @@ class EditorToolbarView: NSView {
     delegate?.toolDidChange(currentTool)
   }
 
-  @objc private func colorChanged(_ sender: NSColorWell) {
-    currentColor = sender.color
-    delegate?.colorDidChange(sender.color)
+  @objc private func colorPickerClicked(_ sender: PickerColorWell) {
+    copyCurrentColorHex()
+  }
+
+  func applySampledImageColor(_ color: NSColor) {
+    currentColor = color
   }
 
   @objc private func copyColorHex() {
+    copyCurrentColorHex()
+  }
+
+  func copyCurrentColorHex() {
     let hex = currentColor.hexString
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(hex, forType: .string)
@@ -441,6 +464,59 @@ class EditorToolbarView: NSView {
       self.colorHexLabel?.textColor = original
       self.colorHexLabel?.stringValue = hex
     }
+  }
+
+  @objc private func zoomButtonClicked(_ sender: NSButton) {
+    let menu = NSMenu()
+    for level in [25, 50, 75, 100, 150, 200] {
+      let item = NSMenuItem(title: "\(level)%", action: #selector(zoomMenuSelected(_:)), keyEquivalent: "")
+      item.tag = level
+      item.target = self
+      if Int(zoomLevel * 100) == level { item.state = .on }
+      menu.addItem(item)
+    }
+    menu.addItem(NSMenuItem.separator())
+
+    // 行内输入框 item
+    let inputContainer = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 28))
+
+    let field = NSTextField(frame: NSRect(x: 12, y: 3, width: 60, height: 22))
+    field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+    field.stringValue = "\(Int(zoomLevel * 100))"
+    field.alignment = .right
+    field.bezelStyle = .roundedBezel
+    field.tag = 9002
+    field.delegate = self
+    inputContainer.addSubview(field)
+
+    let pct = NSTextField(labelWithString: "%")
+    pct.font = .systemFont(ofSize: 12)
+    pct.frame = NSRect(x: 76, y: 5, width: 20, height: 18)
+    inputContainer.addSubview(pct)
+
+    let inputItem = NSMenuItem()
+    inputItem.view = inputContainer
+    menu.addItem(inputItem)
+
+    menu.addItem(NSMenuItem.separator())
+    let fitItem = NSMenuItem(title: "适应窗口", action: #selector(zoomToFit), keyEquivalent: "")
+    fitItem.target = self
+    menu.addItem(fitItem)
+
+    menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+  }
+
+  @objc private func zoomMenuSelected(_ sender: NSMenuItem) {
+    applyZoom(CGFloat(sender.tag) / 100.0)
+  }
+
+  @objc private func zoomToFit() {
+    delegate?.zoomDidChange(0)
+  }
+
+  private func applyZoom(_ level: CGFloat) {
+    zoomLevel = level
+    delegate?.zoomDidChange(level)
   }
 
   @objc private func expandClicked() {
@@ -555,5 +631,39 @@ class EditorToolbarView: NSView {
   override func mouseUp(with event: NSEvent) {
     isDraggingWindow = false
     super.mouseUp(with: event)
+  }
+}
+
+extension EditorToolbarView: NSTextFieldDelegate {
+  func controlTextDidChange(_ obj: Notification) {
+    guard let field = obj.object as? NSTextField, field.tag == 9002 else { return }
+    let raw = field.stringValue.replacingOccurrences(of: "%", with: "")
+    if let value = Int(raw), value >= 10, value <= 500 {
+      applyZoom(CGFloat(value) / 100.0)
+    }
+  }
+
+  func controlTextDidEndEditing(_ obj: Notification) {
+    guard let field = obj.object as? NSTextField, field.tag == 9002 else { return }
+    let raw = field.stringValue.replacingOccurrences(of: "%", with: "")
+    if let value = Int(raw), value >= 10, value <= 500 {
+      applyZoom(CGFloat(value) / 100.0)
+    }
+  }
+}
+
+private final class PickerColorWell: NSColorWell {
+  override var acceptsFirstResponder: Bool { true }
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    sendAction(action, to: target)
+  }
+
+  override func activate(_ exclusive: Bool) {
+    // Keep the toolbar color picker in Shottr-style eyedropper mode instead of Color Panel mode.
   }
 }

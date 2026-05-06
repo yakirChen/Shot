@@ -420,7 +420,7 @@ class SelectionOverlayView: NSView {
         var newY = point.y - dragOffset.y
         newX = max(0, min(newX, bounds.width - dragStartSize.width))
         newY = max(0, min(newY, bounds.height - dragStartSize.height))
-        selectionRect = CGRect(origin: CGPoint(x: newX, y: newY), size: dragStartSize)
+        selectionRect = constrainedRect(CGRect(origin: CGPoint(x: newX, y: newY), size: dragStartSize))
       }
     }
     needsDisplay = true
@@ -432,9 +432,8 @@ class SelectionOverlayView: NSView {
       isSelecting = false
       let rect = normalizedRect(selectionRect)
       if rect.width > 3 && rect.height > 3 {
-        // 框选完成后直接进入编辑，无需额外确认
-        confirmSelection()
-        return
+        selectionRect = constrainedRect(rect)
+        hasSelection = true
       } else {
         selectionRect = .zero
         hasSelection = false
@@ -448,7 +447,6 @@ class SelectionOverlayView: NSView {
   // MARK: - 键盘
 
   override func keyDown(with event: NSEvent) {
-    let isCmd = event.modifierFlags.contains(.command)
     switch event.keyCode {
     case 53: // ESC
       if hasSelection {
@@ -508,9 +506,18 @@ class SelectionOverlayView: NSView {
 
   private func resizeRect(_ rect: CGRect, handle: ResizeHandle, to point: CGPoint) -> CGRect {
     var newRect = rect
+    let point = CGPoint(
+      x: max(0, min(point.x, bounds.width)),
+      y: max(0, min(point.y, bounds.height))
+    )
+
     switch handle {
     case .topLeft:
-      newRect = CGRect(x: point.x, y: point.y, width: rect.maxX - point.x, height: rect.maxY - point.y)
+      newRect = CGRect(
+        x: point.x,
+        y: rect.minY,
+        width: rect.maxX - point.x,
+        height: point.y - rect.minY)
     case .top:
       newRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: point.y - rect.minY)
     case .topRight:
@@ -520,20 +527,40 @@ class SelectionOverlayView: NSView {
     case .right:
       newRect = CGRect(x: rect.minX, y: rect.minY, width: point.x - rect.minX, height: rect.height)
     case .bottomLeft:
-      newRect = CGRect(x: point.x, y: rect.minY, width: rect.maxX - point.x, height: point.y - rect.minY)
+      newRect = CGRect(
+        x: point.x,
+        y: point.y,
+        width: rect.maxX - point.x,
+        height: rect.maxY - point.y)
     case .bottom:
-      newRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: point.y - rect.minY)
+      newRect = CGRect(x: rect.minX, y: point.y, width: rect.width, height: rect.maxY - point.y)
     case .bottomRight:
-      newRect = CGRect(x: rect.minX, y: rect.minY, width: point.x - rect.minX, height: point.y - rect.minY)
+      newRect = CGRect(
+        x: rect.minX,
+        y: point.y,
+        width: point.x - rect.minX,
+        height: rect.maxY - point.y)
     case .none: break
     }
-    return newRect
+    return constrainedRect(normalizedRect(newRect))
   }
 
   private func nudgeSelection(dx: CGFloat, dy: CGFloat) {
     guard hasSelection else { return }
     selectionRect.origin.x += dx
     selectionRect.origin.y += dy
+    selectionRect = constrainedRect(normalizedRect(selectionRect))
     needsDisplay = true
+  }
+
+  private func constrainedRect(_ rect: CGRect) -> CGRect {
+    var rect = normalizedRect(rect)
+
+    rect.size.width = min(rect.width, bounds.width)
+    rect.size.height = min(rect.height, bounds.height)
+    rect.origin.x = max(0, min(rect.origin.x, bounds.width - rect.width))
+    rect.origin.y = max(0, min(rect.origin.y, bounds.height - rect.height))
+
+    return rect.integral
   }
 }

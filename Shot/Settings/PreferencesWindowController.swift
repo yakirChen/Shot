@@ -26,7 +26,7 @@ class PreferencesWindowController: NSWindowController {
 
   init() {
     let window = NSWindow(
-      contentRect: CGRect(x: 0, y: 0, width: 450, height: 380),
+      contentRect: CGRect(x: 0, y: 0, width: 450, height: 420),
       styleMask: [.titled, .closable],
       backing: .buffered,
       defer: false
@@ -48,7 +48,7 @@ class PreferencesWindowController: NSWindowController {
     guard let contentView = window?.contentView else { return }
 
     let prefs = PreferencesManager.shared
-    var y: CGFloat = 340
+    var y: CGFloat = 380
     let leftMargin: CGFloat = 20
     let labelWidth: CGFloat = 160
     let controlX: CGFloat = 190
@@ -92,7 +92,26 @@ class PreferencesWindowController: NSWindowController {
       action: #selector(toggleCaptureCursor(_:))
     )
 
-    y -= 15
+    y -= 10
+
+    // 截图后操作
+    let actionLabel = NSTextField(labelWithString: "截图后操作:")
+    actionLabel.frame = CGRect(x: leftMargin, y: y, width: labelWidth, height: 20)
+    contentView.addSubview(actionLabel)
+
+    let actionPopup = NSPopUpButton(frame: CGRect(x: controlX, y: y - 2, width: 140, height: 26))
+    actionPopup.addItem(withTitle: "打开编辑器")
+    actionPopup.addItem(withTitle: "复制到剪贴板")
+    actionPopup.addItem(withTitle: "保存到文件")
+    actionPopup.addItem(withTitle: "询问")
+    let actionTitles = ["edit": "打开编辑器", "copy": "复制到剪贴板", "save": "保存到文件", "ask": "询问"]
+    actionPopup.selectItem(withTitle: actionTitles[prefs.captureAction.rawValue] ?? "打开编辑器")
+    actionPopup.target = self
+    actionPopup.action = #selector(captureActionChanged(_:))
+    contentView.addSubview(actionPopup)
+    y -= 35
+
+    y -= 5
 
     // 分隔线
     let separator = NSBox(frame: CGRect(x: leftMargin, y: y, width: 410, height: 1))
@@ -227,6 +246,16 @@ class PreferencesWindowController: NSWindowController {
 
   @objc private func toggleCaptureCursor(_ sender: NSButton) {
     PreferencesManager.shared.captureMouseCursor = (sender.state == .on)
+  }
+
+  @objc private func captureActionChanged(_ sender: NSPopUpButton) {
+    let map: [String: CaptureAction] = [
+      "打开编辑器": .edit,
+      "复制到剪贴板": .copy,
+      "保存到文件": .save,
+      "询问": .ask,
+    ]
+    PreferencesManager.shared.captureAction = map[sender.titleOfSelectedItem ?? ""] ?? .edit
   }
 
   @objc private func formatChanged(_ sender: NSPopUpButton) {

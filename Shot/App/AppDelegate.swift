@@ -20,6 +20,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     setupStatusBar()
     setupHotkeys()
     requestScreenCapturePermission()
+    
+    // 启动剪贴板监听
+    ClipboardHistoryManager.shared.startMonitoring()
+
+    // ⌘W 关闭当前 key window
+    NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+      guard event.modifierFlags.contains(.command), event.keyCode == 13,
+            let win = NSApp.keyWindow else { return event }
+      win.performClose(nil)
+      return nil
+    }
   }
 
   // MARK: - 状态栏
@@ -50,6 +61,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     windowItem.keyEquivalentModifierMask = [.command, .shift]
     windowItem.target = self
 
+    // 定时截图子菜单
+    let timedItem = NSMenuItem(title: "定时截图", action: nil, keyEquivalent: "")
+    let timedMenu = NSMenu()
+    for delay in [3, 5, 10] {
+      let item = NSMenuItem(
+        title: "\(delay) 秒后截图", action: #selector(captureWithDelay(_:)), keyEquivalent: "")
+      item.tag = delay
+      item.target = self
+      timedMenu.addItem(item)
+    }
+    timedItem.submenu = timedMenu
+    menu.addItem(timedItem)
+
     menu.addItem(NSMenuItem.separator())
 
     // 工具
@@ -62,7 +86,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // 历史 & 设置
     let historyItem = menu.addItem(
-      withTitle: "截图历史", action: #selector(showHistory), keyEquivalent: "h")
+      withTitle: "历史记录", action: #selector(showHistory), keyEquivalent: "h")
     historyItem.keyEquivalentModifierMask = [.command, .shift]
     historyItem.target = self
 
@@ -74,7 +98,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // 关于 & 退出
     let aboutItem = menu.addItem(
-      withTitle: "关于 ScreenshotTool", action: #selector(showAbout), keyEquivalent: "")
+      withTitle: "关于 Shot", action: #selector(showAbout), keyEquivalent: "")
     aboutItem.target = self
 
     let quitItem = menu.addItem(withTitle: "退出", action: #selector(quitApp), keyEquivalent: "q")
@@ -148,6 +172,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  @objc func captureWithDelay(_ sender: NSMenuItem) {
+    let delay = TimeInterval(sender.tag)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+      SelectionCaptureManager.shared.startCapture(delay: delay)
+    }
+  }
+
   @objc func captureFullScreen() {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
       FullScreenCaptureManager.shared.capture()
@@ -174,7 +205,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   @objc func showAbout() {
     let alert = NSAlert()
-    alert.messageText = "ScreenshotTool"
+    alert.messageText = "Shot"
     alert.informativeText = "版本 1.0.0\n\n一个轻量级的 macOS 截图工具\n支持区域截图、标注编辑、OCR、取色器等功能"
     alert.alertStyle = .informational
     alert.addButton(withTitle: "好")

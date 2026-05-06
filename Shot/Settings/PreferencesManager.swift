@@ -7,6 +7,14 @@
 
 import Cocoa
 
+/// 截图完成后的行为
+enum CaptureAction: String {
+  case copy = "copy"      // 仅复制到剪贴板
+  case save = "save"      // 仅保存到文件
+  case edit = "edit"      // 打开编辑器
+  case ask = "ask"        // 弹出询问菜单
+}
+
 class PreferencesManager {
 
   static let shared = PreferencesManager()
@@ -26,6 +34,7 @@ class PreferencesManager {
     case saveToHistory = "saveToHistory"
     case maxHistoryCount = "maxHistoryCount"
     case captureMouseCursor = "captureMouseCursor"
+    case captureAction = "captureAction"
   }
 
   // MARK: - Properties
@@ -70,6 +79,14 @@ class PreferencesManager {
   var captureMouseCursor: Bool {
     get { defaults.object(forKey: Key.captureMouseCursor.rawValue) as? Bool ?? false }
     set { defaults.set(newValue, forKey: Key.captureMouseCursor.rawValue) }
+  }
+
+  var captureAction: CaptureAction {
+    get {
+      let raw = defaults.string(forKey: Key.captureAction.rawValue) ?? CaptureAction.edit.rawValue
+      return CaptureAction(rawValue: raw) ?? .edit
+    }
+    set { defaults.set(newValue.rawValue, forKey: Key.captureAction.rawValue) }
   }
 
   var maxHistoryCount: Int {

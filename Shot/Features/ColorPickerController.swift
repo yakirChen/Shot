@@ -17,8 +17,35 @@ class ColorPickerController {
   private var localMonitor: Any?
   private var globalMonitor: Any?
   private var frozenImage: NSImage?
+  private var onPreview: ((NSColor) -> Void)?
+  private var onPick: ((NSColor) -> Void)?
+  private var onCancel: (() -> Void)?
 
   func start() {
+    start(
+      onPreview: nil,
+      onPick: { color in
+        let hex = color.hexString
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(hex, forType: .string)
+
+        print("🎨 取色: \(hex)")
+        self.showColorNotification(color: color)
+      },
+      onCancel: nil
+    )
+  }
+
+  func start(
+    onPreview: ((NSColor) -> Void)?,
+    onPick: ((NSColor) -> Void)?,
+    onCancel: (() -> Void)?
+  ) {
+    stop(restore: false)
+    self.onPreview = onPreview
+    self.onPick = onPick
+    self.onCancel = onCancel
+
     Task { @MainActor in
       // 先截一张全屏图
       do {
@@ -71,6 +98,7 @@ class ColorPickerController {
     switch event.type {
     case .mouseMoved:
       updateMagnifier(at: NSEvent.mouseLocation)
+      previewColor(at: NSEvent.mouseLocation)
       return event
 
     case .leftMouseDown:
@@ -79,7 +107,7 @@ class ColorPickerController {
 
     case .keyDown:
       if event.keyCode == 53 {  // ESC
-        stop()
+        stop(restore: true)
         return nil
       }
       return event
@@ -107,17 +135,28 @@ class ColorPickerController {
     }
   }
 
+  private func previewColor(at screenPoint: NSPoint) {
+    guard let color = sampleColor(at: screenPoint) else { return }
+    onPreview?(color)
+  }
+
   private func pickColor(at screenPoint: NSPoint) {
-    guard let image = frozenImage,
-      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-    else {
+    guard let color = sampleColor(at: screenPoint) else {
       stop()
       return
     }
 
+    onPick?(color)
+    stop(restore: false)
+  }
+
+  private func sampleColor(at screenPoint: NSPoint) -> NSColor? {
+    guard let image = frozenImage,
+      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else { return nil }
+
     guard let screen = NSScreen.main else {
-      stop()
-      return
+      return nil
     }
 
     // 转换坐标
@@ -130,8 +169,7 @@ class ColorPickerController {
       let data = dataProvider.data,
       let pointer = CFDataGetBytePtr(data)
     else {
-      stop()
-      return
+      return nil
     }
 
     let bytesPerPixel = cgImage.bitsPerPixel / 8
@@ -145,22 +183,16 @@ class ColorPickerController {
     let g = CGFloat(pointer[offset + 1]) / 255.0
     let r = CGFloat(pointer[offset + 2]) / 255.0
 
-    let hex = String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
-    let rgb = "rgb(\(Int(r * 255)), \(Int(g * 255)), \(Int(b * 255)))"
-
-    // 复制到剪贴板
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(hex, forType: .string)
-
-    print("🎨 取色: \(hex) / \(rgb)")
-
-    stop()
-
-    // 显示通知
-    showColorNotification(hex: hex, r: r, g: g, b: b)
+    return NSColor(red: r, green: g, blue: b, alpha: 1)
   }
 
-  private func showColorNotification(hex: String, r: CGFloat, g: CGFloat, b: CGFloat) {
+  private func showColorNotification(color: NSColor) {
+    let converted = color.usingColorSpace(.sRGB) ?? color
+    let r = converted.redComponent
+    let g = converted.greenComponent
+    let b = converted.blueComponent
+    let hex = converted.hexString
+
     let alert = NSAlert()
     alert.messageText = "颜色已复制"
     alert.informativeText = "\(hex)\nrgb(\(Int(r*255)), \(Int(g*255)), \(Int(b*255)))"
@@ -185,11 +217,17 @@ class ColorPickerController {
     return image
   }
 
-  func stop() {
+  func stop(restore: Bool = false) {
     if let monitor = localMonitor {
       NSEvent.removeMonitor(monitor)
       localMonitor = nil
     }
+    if restore {
+      onCancel?()
+    }
+    onPreview = nil
+    onPick = nil
+    onCancel = nil
     NSCursor.pop()
     overlayWindow?.close()
     overlayWindow = nil
